@@ -124,7 +124,6 @@ You can also use DCS as a GitHub Action to automatically generate summaries from
 3. **Customize as needed:**
    - Adjust the schedule to your preferred frequency
    - Change the `frequency` parameter to match your needs
-   - Replace `your-username` with your actual GitHub username
 
 ### Manual Trigger
 
