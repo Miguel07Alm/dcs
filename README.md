@@ -86,6 +86,54 @@ Keeping a community updated with the latest project developments often involves 
 
 Check the `logs/` directory within the project folder. Each script run creates a detailed markdown file (e.g., `dcs_run_YYYYMMDD_HHMMSS.md`) containing information about the execution steps, fetched commits, AI prompts/responses, and any errors encountered.
 
+## GitHub Action
+
+You can also use DCS as a GitHub Action to automatically generate summaries from your GitHub repository and post them to Discord.
+
+### Setting up the GitHub Action
+
+1. **Add required secrets to your GitHub repository:**
+   - Go to your repository's Settings > Secrets and variables > Actions
+   - Add the following secrets:
+     - `DISCORD_WEBHOOK_URL`: Your Discord channel webhook URL
+     - `GEMINI_API_KEY`: Your API key for the Google Gemini model
+
+2. **Use as a workflow in your repository:**
+
+   Create a file at `.github/workflows/discord-summary.yml` with the following content:
+
+   ```yaml
+   name: Discord Commit Summary
+
+   on:
+     schedule:
+       - cron: '0 12 * * 5'  # Run every Friday at 12:00 UTC
+     workflow_dispatch:  
+
+   jobs:
+     summarize:
+       uses: miguel07alm/dcs/.github/workflows/dcs-action.yml@feat/no-ref/github-actions
+       with:
+         frequency: weekly  # Options: daily, weekly, monthly
+         send_empty_summary: false  # Whether to send a summary when no commits are found
+       secrets:
+         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+   ```
+
+3. **Customize as needed:**
+   - Adjust the schedule to your preferred frequency
+   - Change the `frequency` parameter to match your needs
+   - Replace `your-username` with your actual GitHub username
+
+### Manual Trigger
+
+You can also manually trigger the workflow by:
+1. Going to your repository's "Actions" tab
+2. Selecting the "Discord Commit Summary" workflow
+3. Clicking "Run workflow"
+4. Optionally adjusting the parameters before running
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

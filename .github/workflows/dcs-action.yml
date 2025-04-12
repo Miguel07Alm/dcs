@@ -1,0 +1,115 @@
+name: Discord Commit Summarizer
+
+on:
+  workflow_call:
+    inputs:
+      frequency:
+        description: 'Frequency of commit summaries (daily, weekly, monthly)'
+        required: false
+        default: 'weekly'
+        type: string
+      send_empty_summary:
+        description: 'Whether to send a summary even if no new commits are found'
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      DISCORD_WEBHOOK_URL:
+        description: 'Discord webhook URL to send summaries to'
+        required: true
+      GEMINI_API_KEY:
+        description: 'Google Gemini API key for AI summaries'
+        required: true
+
+  workflow_dispatch:
+    inputs:
+      frequency:
+        description: 'Frequency of commit summaries'
+        required: true
+        default: 'weekly'
+        type: choice
+        options:
+          - daily
+          - weekly
+          - monthly
+      send_empty_summary:
+        description: 'Send summary even if no new commits'
+        required: false
+        default: false
+        type: boolean
+
+  schedule:
+    # Run every Friday at 12:00 UTC
+    - cron: '0 12 * * 5'
+
+jobs:
+  summarize-commits:
+    name: Generate and send commit summary
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for all branches and tags
+          
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Install required dependencies directly 
+          pip install GitPython requests python-dotenv openai
+          
+      - name: Clone DCS Repository
+        uses: actions/checkout@v4
+        with:
+          repository: miguel07alm/dcs
+          ref: feat/no-ref/github-actions
+          path: dcs-tool
+          
+      - name: Debug - Show DCS tool directory
+        run: |
+          echo "DCS tool directory contents:"
+          ls -la dcs-tool/
+          
+      - name: Install DCS
+        working-directory: dcs-tool
+        run: |
+          echo "Installing DCS package..."
+          # Check which file exists and use appropriate installation method
+          echo "Found pyproject.toml, installing with pip -e ."
+          pip install -e .
+          
+          echo "DCS package installation attempt completed."
+          
+      - name: Debug - Verify installation
+        run: |
+          pip list | grep -i dcs || echo "DCS package not found in pip list"
+          
+      - name: Run Discord Commit Summarizer
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GIT_REPO_PATH: ${{ github.workspace }}
+          SUMMARY_FREQUENCY: ${{ inputs.frequency || 'weekly' }}
+          SEND_EMPTY_SUMMARY: ${{ inputs.send_empty_summary || 'false' }}
+        working-directory: dcs-tool
+        run: |
+          python -m dcs.main
+
+      - name: Debug - Find logs directory
+        if: always()
+        run: |
+          echo "Searching for logs directory..."
+          find ${{ github.workspace }} -type d -name "logs" || echo "No logs directory found"
+          
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dcs-logs
+          path: dcs-tool/logs/
+          retention-days: 7
