@@ -1,0 +1,82 @@
+name: Discord Commit Summarizer
+
+on:
+  workflow_call:
+    inputs:
+      frequency:
+        description: 'Frequency of commit summaries (daily, weekly, monthly)'
+        required: false
+        default: 'weekly'
+        type: string
+      send_empty_summary:
+        description: 'Whether to send a summary even if no new commits are found'
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      DISCORD_WEBHOOK_URL:
+        description: 'Discord webhook URL to send summaries to'
+        required: true
+      GEMINI_API_KEY:
+        description: 'Google Gemini API key for AI summaries'
+        required: true
+
+  workflow_dispatch:
+    inputs:
+      frequency:
+        description: 'Frequency of commit summaries'
+        required: true
+        default: 'weekly'
+        type: choice
+        options:
+          - daily
+          - weekly
+          - monthly
+      send_empty_summary:
+        description: 'Send summary even if no new commits'
+        required: false
+        default: false
+        type: boolean
+
+  schedule:
+    # Run every Friday at 12:00 UTC
+    - cron: '0 12 * * 5'
+
+jobs:
+  summarize-commits:
+    name: Generate and send commit summary
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for all branches and tags
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt || pip install ./
+
+      - name: Run Discord Commit Summarizer
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GIT_REPO_PATH: ${{ github.workspace }}
+          SUMMARY_FREQUENCY: ${{ inputs.frequency || 'weekly' }}
+          SEND_EMPTY_SUMMARY: ${{ inputs.send_empty_summary || 'false' }}
+        run: |
+          python -m dcs.main
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: dcs-logs
+          path: logs/
+          retention-days: 7
