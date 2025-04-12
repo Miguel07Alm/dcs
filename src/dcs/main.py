@@ -4,10 +4,15 @@ from dotenv import load_dotenv
 from git import Repo, GitCommandError, Commit
 from typing import List, Dict, Any
 # Add imports for logging functionality
-import time 
-from datetime import datetime, timedelta 
+import time
+from datetime import datetime, timedelta
 import logging
 from openai import OpenAI, OpenAIError
+# Add imports for email notification
+import smtplib
+from email.mime.text import MIMEText
+import traceback # To get detailed error info
+
 # Keep existing imports
 
 # --- Log File Setup ---
@@ -42,6 +47,63 @@ def log_to_run_file(header, content):
 # --- End Log File Setup ---
 
 
+# --- Email Notification Setup ---
+SMTP_SERVER = os.getenv("SMTP_SERVER")
+SMTP_PORT = os.getenv("SMTP_PORT", 587) # Default to 587 (TLS)
+SMTP_USER = os.getenv("SMTP_USER")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+EMAIL_SENDER = os.getenv("EMAIL_SENDER", SMTP_USER) # Default sender to user if not specified
+EMAIL_RECEIVER = os.getenv("EMAIL_RECEIVER")
+ENABLE_EMAIL_NOTIFICATION = os.getenv("ENABLE_EMAIL_NOTIFICATION", "false").lower() == "true"
+
+def send_failure_email(subject, error_details):
+    """Sends an email notification about a critical failure."""
+    if not ENABLE_EMAIL_NOTIFICATION:
+        logging.info("Email notifications are disabled. Skipping failure email.")
+        return
+
+    if not all([SMTP_SERVER, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, EMAIL_SENDER, EMAIL_RECEIVER]):
+        logging.error("Missing one or more required SMTP environment variables for email notification. Cannot send email.")
+        # Log which ones are missing for easier debugging
+        missing_vars = [var for var, val in {
+            "SMTP_SERVER": SMTP_SERVER, "SMTP_PORT": SMTP_PORT, "SMTP_USER": SMTP_USER,
+            "SMTP_PASSWORD": "***", "EMAIL_SENDER": EMAIL_SENDER, "EMAIL_RECEIVER": EMAIL_RECEIVER
+        }.items() if not val]
+        logging.error(f"Missing email config variables: {', '.join(missing_vars)}")
+        log_to_run_file("Email Sending Error", f"Missing config variables: {', '.join(missing_vars)}")
+        return
+
+    msg = MIMEText(f"The DCS script encountered a critical error and could not complete.\n\nError Details:\n{error_details}")
+    msg['Subject'] = f"[DCS Failure] {subject}"
+    msg['From'] = EMAIL_SENDER
+    msg['To'] = EMAIL_RECEIVER
+
+    try:
+        logging.info(f"Attempting to send failure email to {EMAIL_RECEIVER} via {SMTP_SERVER}:{SMTP_PORT}")
+        # Connect to SMTP server and send email
+        with smtplib.SMTP(SMTP_SERVER, int(SMTP_PORT)) as server:
+            server.ehlo() # Can be omitted
+            server.starttls() # Secure the connection
+            server.ehlo() # Can be omitted
+            server.login(SMTP_USER, SMTP_PASSWORD)
+            server.sendmail(EMAIL_SENDER, EMAIL_RECEIVER, msg.as_string())
+            logging.info("Failure email sent successfully.")
+            log_to_run_file("Failure Email Sent", f"Sent notification for error: {subject}")
+    except smtplib.SMTPAuthenticationError as e:
+        logging.error(f"SMTP Authentication failed: {e}. Check SMTP_USER and SMTP_PASSWORD.")
+        log_to_run_file("Email Sending Error", f"SMTP Authentication failed: {e}")
+    except smtplib.SMTPServerDisconnected as e:
+         logging.error(f"SMTP server disconnected unexpectedly: {e}. Check server/port and network.")
+         log_to_run_file("Email Sending Error", f"SMTP server disconnected: {e}")
+    except smtplib.SMTPException as e:
+        logging.error(f"Failed to send failure email due to SMTP error: {e}")
+        log_to_run_file("Email Sending Error", f"SMTP Error: {e}")
+    except Exception as e:
+        logging.error(f"An unexpected error occurred while sending the failure email: {e}")
+        log_to_run_file("Email Sending Error", f"Unexpected Error: {e}")
+# --- End Email Notification Setup ---
+
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -57,7 +119,7 @@ DISCORD_CHAR_LIMIT = 2000
 # Logging configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# --- Existing Functions (get_commits_since, format_commits_for_prompt) ---
+# --- Existing Functions (ensure_log_dir_exists, log_to_run_file, get_commits_since, format_commits_for_prompt) ---
 def get_commits_since(repo_path, since_date) -> List[Dict[str, Any]]:
     """Fetches commits from the repository since a given date, including diff info."""
     commits_data = []
@@ -349,49 +411,82 @@ def get_start_date(frequency):
 
 def main():
     # Ensure log directory exists at the very start
-    ensure_log_dir_exists()
-    # Add logging call
-    log_to_run_file("Script Execution Started", f"Frequency: {SUMMARY_FREQUENCY}, Repo: {GIT_REPO_PATH}")
+    # Use a try-except here as well, as failure to create logs is critical early on
+    try:
+        ensure_log_dir_exists()
+    except Exception as e:
+        # Use basic print/logging as the log file might not be writable
+        print(f"CRITICAL: Failed to create log directory '{LOG_DIR}': {e}", file=sys.stderr)
+        # Attempt email notification even if logging failed
+        error_details = f"Failed to create log directory '{LOG_DIR}'.\n{traceback.format_exc()}"
+        send_failure_email("Log Directory Creation Failed", error_details)
+        sys.exit(1) # Exit with error code
 
+    # Log script start after ensuring log dir exists
+    log_to_run_file("Script Execution Started", f"Frequency: {SUMMARY_FREQUENCY}, Repo: {GIT_REPO_PATH}")
     logging.info("Starting DCS - Discord Commit Summarizer...")
 
-    if not GIT_REPO_PATH:
-        logging.error("GIT_REPO_PATH environment variable is not set. Exiting.")
-        # Add logging call
-        log_to_run_file("Script Execution Error", "GIT_REPO_PATH not set.")
-        return
-
-    if not DISCORD_WEBHOOK_URL:
-        logging.warning("DISCORD_WEBHOOK_URL environment variable is not set. Summary will only be logged.")
-        # Add logging call
-        log_to_run_file("Configuration Warning", "DISCORD_WEBHOOK_URL not set.")
-
-    # Determine the start date for fetching commits
-    start_date = get_start_date(SUMMARY_FREQUENCY)
-    # Add logging call
-    log_to_run_file("Calculated Start Date", start_date.isoformat())
-    logging.info(f"Fetching commits since {start_date.strftime('%Y-%m-%d')} based on '{SUMMARY_FREQUENCY}' frequency.")
-
-    # Get commits with diff summaries
-    commits_data = get_commits_since(GIT_REPO_PATH, start_date)
-    # Log commit summary (avoid logging full commit objects directly)
-    commits_summary_for_log = [
-        {
-            "hexsha": d["commit"].hexsha,
-            "message": d["commit"].message.strip(),
-            "author": d["commit"].author.name,
-            "date": d["commit"].committed_datetime.isoformat(),
-            "diff_summary": d["diff_summary"]
-        } for d in commits_data
-    ]
-    # Add logging call
-    log_to_run_file("Fetched Commits Data (Summary)", commits_summary_for_log)
-
-    # Try to read README.md from the target repository for context
-    readme_content = None
+    # --- Core Logic Wrapped in Exception Handling ---
     try:
-        # Ensure GIT_REPO_PATH is defined before using it
-        if GIT_REPO_PATH:
+        # --- Essential Configuration Checks ---
+        critical_error = False
+        error_messages = []
+
+        if not GIT_REPO_PATH:
+            error_messages.append("GIT_REPO_PATH environment variable is not set.")
+            critical_error = True
+        elif not os.path.isdir(GIT_REPO_PATH):
+             error_messages.append(f"GIT_REPO_PATH '{GIT_REPO_PATH}' does not exist or is not a directory.")
+             critical_error = True
+
+        # Check Gemini key only if AI summary is intended (it's the default)
+        # If basic formatting is acceptable without AI, this might not be strictly critical
+        if not GEMINI_API_KEY:
+             # This might be a warning or an error depending on requirements
+             # For now, treat as critical as AI summary is the primary goal
+             error_messages.append("GEMINI_API_KEY environment variable is not set. AI summarization will fail.")
+             critical_error = True # Treat as critical for now
+
+        if not DISCORD_WEBHOOK_URL:
+            logging.warning("DISCORD_WEBHOOK_URL environment variable is not set. Summary will only be logged.")
+            log_to_run_file("Configuration Warning", "DISCORD_WEBHOOK_URL not set.")
+            # Not typically critical, the script can still run and log
+
+        if critical_error:
+            full_error_msg = "Critical configuration error(s):\n- " + "\n- ".join(error_messages)
+            logging.error(full_error_msg)
+            log_to_run_file("Script Execution Error", full_error_msg)
+            # Send email notification about configuration errors
+            send_failure_email("Configuration Error", full_error_msg)
+            sys.exit(1) # Exit due to critical configuration issues
+        # --- End Configuration Checks ---
+
+
+        # Determine the start date for fetching commits
+        start_date = get_start_date(SUMMARY_FREQUENCY)
+        # Add logging call
+        log_to_run_file("Calculated Start Date", start_date.isoformat())
+        logging.info(f"Fetching commits since {start_date.strftime('%Y-%m-%d')} based on '{SUMMARY_FREQUENCY}' frequency.")
+
+        # Get commits with diff summaries (already has internal error handling)
+        commits_data = get_commits_since(GIT_REPO_PATH, start_date)
+        # Log commit summary (avoid logging full commit objects directly)
+        commits_summary_for_log = [
+            {
+                "hexsha": d["commit"].hexsha,
+                "message": d["commit"].message.strip(),
+                "author": d["commit"].author.name,
+                "date": d["commit"].committed_datetime.isoformat(),
+                "diff_summary": d["diff_summary"]
+            } for d in commits_data
+        ]
+        # Add logging call
+        log_to_run_file("Fetched Commits Data (Summary)", commits_summary_for_log)
+
+        # Try to read README.md from the target repository for context
+        readme_content = None
+        try:
+            # Ensure GIT_REPO_PATH is defined before using it (already checked above)
             readme_path = os.path.join(GIT_REPO_PATH, 'README.md')
             if os.path.exists(readme_path):
                 # Read only the first ~1000 characters to avoid overly long prompts
@@ -399,38 +494,65 @@ def main():
                     readme_content = f.read(1000)
                 logging.info("Read start of project README.md for context.")
                 # Add logging call
-                log_to_run_file("Read README Context (First 1000 chars)", readme_content)
+                log_to_run_file("Read README Context (First 1000 chars)", readme_content if readme_content else "Empty")
             else:
                 logging.info("Project README.md not found in GIT_REPO_PATH. Proceeding without project context.")
                 # Add logging call
                 log_to_run_file("README Context", "README.md not found.")
+        except Exception as e:
+            # Log error but continue, README context is not strictly critical
+            logging.error(f"Error reading project README.md: {e}")
+            log_to_run_file("Error Reading README", str(e))
+
+        # Format commits using AI (or basic fallback), passing the context
+        # This function already has internal error handling and fallback
+        summary_message = summarize_commits_with_ai(commits_data, project_context=readme_content)
+        # Add logging call
+        log_to_run_file("Final Summary Message (Before Sending)", summary_message)
+
+        # Send to Discord (already has internal error handling)
+        if DISCORD_WEBHOOK_URL:
+            success = send_to_discord(DISCORD_WEBHOOK_URL, summary_message)
+            if not success:
+                logging.error("Failed to send one or more message parts to Discord.")
+                # Decide if this is critical enough for email. Maybe not, as summary was generated.
+                # For now, just log it.
+                log_to_run_file("Discord Sending Issue", "Failed to send one or more message parts.")
         else:
-             logging.warning("GIT_REPO_PATH is not set, cannot read README.md.")
-             # Add logging call
-             log_to_run_file("README Context", "GIT_REPO_PATH not set, cannot read README.")
+            logging.info("Discord webhook URL not provided. Logging summary instead:")
+            print("--- Summary Start ---")
+            print(summary_message)
+            print("--- Summary End ---")
+            # Add logging call
+            log_to_run_file("Discord Sending Skipped", "Webhook URL not provided. Logged to console.")
+
+        # Add logging call
+        log_to_run_file("Script Execution Finished Successfully", "------")
+        logging.info("DCS script finished successfully.")
+
     except Exception as e:
-        logging.error(f"Error reading project README.md: {e}")
-        # Add logging call
-        log_to_run_file("Error Reading README", str(e))
+        # --- Catch-all for any unexpected errors during main execution ---
+        error_timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        error_type = type(e).__name__
+        error_traceback = traceback.format_exc() # Get the full traceback
 
-    # Format commits using AI (or basic fallback), passing the context
-    summary_message = summarize_commits_with_ai(commits_data, project_context=readme_content)
-    # Add logging call
-    log_to_run_file("Final Summary Message (Before Sending)", summary_message)
+        # Log the critical error details
+        logging.critical(f"CRITICAL ERROR encountered at {error_timestamp}: {error_type} - {e}")
+        logging.critical(f"Traceback:\n{error_traceback}")
 
-    # Send to Discord
-    if DISCORD_WEBHOOK_URL:
-        send_to_discord(DISCORD_WEBHOOK_URL, summary_message)
-    else:
-        logging.info("Discord webhook URL not provided. Logging summary instead:")
-        print("--- Summary Start ---")
-        print(summary_message)
-        print("--- Summary End ---")
-        # Add logging call
-        log_to_run_file("Discord Sending Skipped", "Webhook URL not provided. Logged to console.")
+        # Log details to the run file as well
+        error_details_for_log = f"Timestamp: {error_timestamp}\nError Type: {error_type}\nMessage: {e}\n\nTraceback:\n{error_traceback}"
+        log_to_run_file(f"CRITICAL SCRIPT FAILURE: {error_type}", error_details_for_log)
 
-    # Add logging call
-    log_to_run_file("Script Execution Finished", "------")
+        # Send email notification
+        email_subject = f"Critical Error: {error_type}"
+        send_failure_email(email_subject, error_details_for_log)
+
+        # Exit with a non-zero status code to indicate failure to cron
+        sys.exit(1)
+
 
 if __name__ == "__main__":
+    # Add sys import for exit codes
+    import sys
     main()
