@@ -61,15 +61,30 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt || pip install ./
+          # Install required dependencies directly 
+          pip install GitPython requests python-dotenv openai
 
+      - name: Clone DCS Repository
+        uses: actions/checkout@v4
+        with:
+          repository: miguel07alm/dcs
+          ref: feat/no-ref/github-actions
+          path: dcs-tool
+          
+      - name: Install DCS
+        working-directory: dcs-tool
+        run: |
+          pip install -e .
+          
       - name: Run Discord Commit Summarizer
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # Use the original checkout path for the target repository
           GIT_REPO_PATH: ${{ github.workspace }}
           SUMMARY_FREQUENCY: ${{ inputs.frequency || 'weekly' }}
           SEND_EMPTY_SUMMARY: ${{ inputs.send_empty_summary || 'false' }}
+        working-directory: dcs-tool
         run: |
           python -m dcs.main
 
