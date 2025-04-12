@@ -62,8 +62,6 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-          # Disable pip caching since we don't know if target repo has requirements files
-          cache: 'none'
 
       - name: Python version check
         run: |
