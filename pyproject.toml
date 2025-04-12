@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dcs"
+version = "0.1.0"
+description = "Discord Commit Summarizer using AI"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Your Name", email = "your.email@example.com"},
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "requests", # For sending requests to Discord webhook
+    "python-dotenv", # For loading environment variables
+    "GitPython", # For interacting with Git repositories
+    # "google-generativeai", # Using OpenAI interface instead
+    "openai", # For Gemini API via OpenAI interface
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/dcs" # Replace with your repo URL
+
+[project.scripts]
+dcs = "dcs.main:main"

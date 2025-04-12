@@ -1,0 +1,17 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Environment variables
+.env
+**.*env
+*.env
+
+# Logs
+logs/
+
+# State file
+dcs_state.json
+
+# VS Code settings
+.vscode/
