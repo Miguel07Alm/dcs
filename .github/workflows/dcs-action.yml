@@ -51,30 +51,17 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Fetch all history for all branches and tags
-
-      - name: Debug - Show workspace contents after checkout
-        run: |
-          echo "Current directory: $(pwd)"
-          echo "Directory listing:"
-          ls -la
           
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-
-      - name: Python version check
-        run: |
-          python --version
-          pip --version
           
       - name: Install dependencies
         run: |
-          echo "Installing dependencies..."
           python -m pip install --upgrade pip
           # Install required dependencies directly 
           pip install GitPython requests python-dotenv openai
-          echo "Dependencies installed."
           
       - name: Clone DCS Repository
         uses: actions/checkout@v4
@@ -106,7 +93,6 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # Use the original checkout path for the target repository
           GIT_REPO_PATH: ${{ github.workspace }}
           SUMMARY_FREQUENCY: ${{ inputs.frequency || 'weekly' }}
           SEND_EMPTY_SUMMARY: ${{ inputs.send_empty_summary || 'false' }}
