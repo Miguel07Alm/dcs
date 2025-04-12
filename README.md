@@ -2,6 +2,10 @@
 
 A tool that monitors a local Git repository, generates AI-powered summaries of recent commits (daily, weekly, or monthly), and sends them to a Discord channel. Includes robust error handling and optional email notifications for critical failures.
 
+## Motivation
+
+Keeping a community updated with the latest project developments often involves manually reading through Git commits and crafting announcements. This tool was born out of the desire to automate this process, making it effortless to generate clear, engaging updates from commit history and share them directly where the community gathers, like Discord.
+
 ## Features
 
 *   Monitors a specified local Git repository.
