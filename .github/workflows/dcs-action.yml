@@ -52,18 +52,31 @@ jobs:
         with:
           fetch-depth: 0  # Fetch all history for all branches and tags
 
+      - name: Debug - Show workspace contents after checkout
+        run: |
+          echo "Current directory: $(pwd)"
+          echo "Directory listing:"
+          ls -la
+          
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
           cache: 'pip'
 
+      - name: Python version check
+        run: |
+          python --version
+          pip --version
+          
       - name: Install dependencies
         run: |
+          echo "Installing dependencies..."
           python -m pip install --upgrade pip
           # Install required dependencies directly 
           pip install GitPython requests python-dotenv openai
-
+          echo "Dependencies installed."
+          
       - name: Clone DCS Repository
         uses: actions/checkout@v4
         with:
@@ -71,10 +84,21 @@ jobs:
           ref: feat/no-ref/github-actions
           path: dcs-tool
           
+      - name: Debug - Show DCS tool directory
+        run: |
+          echo "DCS tool directory contents:"
+          ls -la dcs-tool/
+          
       - name: Install DCS
         working-directory: dcs-tool
         run: |
+          echo "Installing DCS package..."
           pip install -e .
+          echo "DCS package installed."
+          
+      - name: Debug - Verify installation
+        run: |
+          pip list | grep -i dcs || echo "DCS package not found in pip list"
           
       - name: Run Discord Commit Summarizer
         env:
@@ -88,10 +112,16 @@ jobs:
         run: |
           python -m dcs.main
 
+      - name: Debug - Find logs directory
+        if: always()
+        run: |
+          echo "Searching for logs directory..."
+          find ${{ github.workspace }} -type d -name "logs" || echo "No logs directory found"
+          
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: dcs-logs
-          path: logs/
+          path: dcs-tool/logs/
           retention-days: 7
