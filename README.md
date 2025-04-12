@@ -112,7 +112,7 @@ You can also use DCS as a GitHub Action to automatically generate summaries from
 
    jobs:
      summarize:
-       uses: miguel07alm/dcs/.github/workflows/dcs-action.yml@feat/no-ref/github-actions
+       uses: miguel07alm/dcs/.github/workflows/dcs-action.yml@main
        with:
          frequency: weekly  # Options: daily, weekly, monthly
          send_empty_summary: false  # Whether to send a summary when no commits are found

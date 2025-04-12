@@ -67,27 +67,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: miguel07alm/dcs
-          ref: feat/no-ref/github-actions
+          ref: main
           path: dcs-tool
-          
-      - name: Debug - Show DCS tool directory
-        run: |
-          echo "DCS tool directory contents:"
-          ls -la dcs-tool/
           
       - name: Install DCS
         working-directory: dcs-tool
         run: |
-          echo "Installing DCS package..."
-          # Check which file exists and use appropriate installation method
-          echo "Found pyproject.toml, installing with pip -e ."
+          # Install the DCS package
           pip install -e .
-          
-          echo "DCS package installation attempt completed."
-          
-      - name: Debug - Verify installation
-        run: |
-          pip list | grep -i dcs || echo "DCS package not found in pip list"
           
       - name: Run Discord Commit Summarizer
         env:
@@ -100,12 +87,6 @@ jobs:
         run: |
           python -m dcs.main
 
-      - name: Debug - Find logs directory
-        if: always()
-        run: |
-          echo "Searching for logs directory..."
-          find ${{ github.workspace }} -type d -name "logs" || echo "No logs directory found"
-          
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
